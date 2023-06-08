@@ -7,7 +7,7 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #ToDo:  implement/uncomment strict
-use strict;
+#use strict;
 use warnings;
 use Getopt::Std; 		#need for commandline flags
 use POSIX;				#need for time
@@ -24,21 +24,39 @@ sub usage;
 # see usage() below for explanation of switches
 my $version="0.3_20230603";
 my $commandname=$0=~ s/^.*\///r;  #let's know our own name
-my %opt=();
+my ($infile, $outfile); 	#these are for the filenames, specefied either using switches or as positional params
+my %opt=();				#used with getopts for flagged arguments
 getopts('dhi:o:l:', \%opt) or usage();		
 
 my $debugging=1 if $opt{d};
 usage () if ( $opt{h} ) ;
 
+# getopts must pop each flagged argument off the stack, leaving "trailing positional parameters"
+# so here we examine what's available and assign as necessary
+if ($ARGV[0]) {		#this will set the input file
+	$infile = $ARGV[0];
+	die "Please don't specify two input files: it's confusing.  Dying" if $opt{i};
+	}
+else {
+	$infile = $opt{i};
+	}
+
+if ($ARGV[1]) {		#this will set the output file
+	$outfile = $ARGV[1];
+	die "Please don't specify two output files: it's confusing.  Dying" if $opt{o};
+	}
+else {
+	$outfile = $opt{o};
+	}
+
 #ToDo:  consider implementing piping
-#ToDo:  determine if infile is provided as bare argument; how can we handle that?
 #piping /dev/stdin may be possible; piping stdout|stderr (or redirect if specified) is an option
-open(my $inFH, '<:encoding(UTF-8)', $opt{i}) or die "Could not open file '$opt{i}' $!";
+open($inFH, '<:encoding(UTF-8)', $infile) or die "Could not open file '$infile' $!";
 
 my $outFH=*STDOUT;
-if ($opt{o}) {
-    open($outFH, '>:encoding(UTF-8)', $opt{o}) 
-        or die "Could not open file '$opt{o}': $!\n";
+if ($outfile) {
+    open($outFH, '>:encoding(UTF-8)', $outfile) 
+        or die "Could not open file '$outfile': $!\n";
     }
 *STDOUT=$outFH;
 

@@ -7,9 +7,10 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #ToDo:  implement/uncomment strict
-#use strict;
+use strict;
 use warnings;
-use Getopt::Std; 		#need for commandline flags
+use Getopt::Std; 		#need for commandline flags; 
+						#ToDo: consider Getopt::Long for extended argument-handling
 use POSIX;				#need for time
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -22,7 +23,7 @@ sub usage;
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # switches followed by a : expect an argument
 # see usage() below for explanation of switches
-my $version="0.3_20230603";
+my $version="04_20230608";
 my $commandname=$0=~ s/^.*\///r;  #let's know our own name
 my ($infile, $outfile); 	#these are for the filenames, specefied either using switches or as positional params
 my %opt=();				#used with getopts for flagged arguments
@@ -49,9 +50,12 @@ else {
 	$outfile = $opt{o};
 	}
 
-#ToDo:  consider implementing piping
-#piping /dev/stdin may be possible; piping stdout|stderr (or redirect if specified) is an option
-open($inFH, '<:encoding(UTF-8)', $infile) or die "Could not open file '$infile' $!";
+#piping /dev/stdin|stdout|stderr (or redirect) is an option
+my $inFH=*STDIN;
+if ($infile) {
+	open($inFH, '<:encoding(UTF-8)', $infile) 
+		or die "Could not open file '$infile' $!";
+	}
 
 my $outFH=*STDOUT;
 if ($outfile) {

@@ -23,10 +23,10 @@ sub usage;
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # switches followed by a : expect an argument
 # see usage() below for explanation of switches
-my $version="04_20230608";
-my $commandname=$0=~ s/^.*\///r;  #let's know our own name
-my ($infile, $outfile); 	#these are for the filenames, specefied either using switches or as positional params
-my %opt=();				#used with getopts for flagged arguments
+my $version="05_20230608";
+my $commandname=$0=~ s/^.*\///r;  	#let's know our own name
+my ($infile, $outfile); 			#these are for the filenames, specefied either using switches or as positional params
+my %opt=();							#used with getopts for flagged arguments
 getopts('dhi:o:l:', \%opt) or usage();		
 
 my $debugging=1 if $opt{d};
@@ -98,7 +98,8 @@ while (my $row = <$inFH>) {		#get a line
 	die "unexpected ending:\n$records[$#records]\n" if $records[$#records] =~ s/}\]$// != 1; 
 	
 	printf $logFH "record count: %d\n",$#records+1 if $debugging;
-	printf $logFH "%d lines\n\nfirst:\n%s\n\nsecond:\n%s\n\nlast:\n%s\n",$lineCount,$records[0],$records[1],$records[$#records] if $debugging;
+	printf $logFH "%d lines\n\nfirst:\n%s\n\nsecond:\n%s\n\nlast:\n%s\n",
+		$lineCount,$records[0],$records[1],$records[$#records] if $debugging;
 #ToDo:  add verbose switch and make the first, second, & last lines only show if $debugging>1
 	
 	}			
@@ -123,9 +124,9 @@ for my $record (@records) {			#take a pass through entire file to identify all t
 	printf $logFH "Found total of %d unique names/fields:\n", (scalar keys %allFields) if $debugging;
 	printf $logFH "%24s: Count\n","Fieldname" if $debugging;
 	foreach my $key (sort keys %allFields){		#cycle through all the discovered field names
-		printf $logFH "%24s: %s\n",$key,$allFields{$key} if $debugging; #shows occurences of each field across all records
-#ToDo:  use <NULL> to distinguish from Json null
-		$outBuff{$key}="null";			#outbuff serves as template
+		printf $logFH "%24s: %s\n",$key,$allFields{$key} if $debugging; #shows occurrences of each field across all records
+#DONE:  use <NULL> to distinguish from Json null (quoted)
+		$outBuff{$key}="\"<NULL>\"";			#outbuff serves as template
 #ToDo:  can probably just reuse allFields as template
 		printf $outFH "%s\t",$key;		#generates the header row for the output file
 		}
@@ -147,7 +148,7 @@ for my $row (@records) {	#we should be able to just restart, and this time we ca
 		}									#finished processing this line/record/object
 	foreach my $key (sort keys %outBuff){  #need to sort to keep everything aligned
 		printf $outFH "%s\t",$outBuff{$key};	#write output
-		$outBuff{$key}="null";					#set each field to null; should be synched with usage in first loop
+		$outBuff{$key}="\"<NULL>\"";					#set each field to null; should be synched with usage in first loop
 		}										#finished writing the output record
 	printf $outFH "\n";							#close of the record with a newline
 	}									#loop back for another line if available
@@ -168,8 +169,7 @@ exit 0;			#end of main; everything went well
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 sub usage() {  #provides help
     print "like this: \n\t".$commandname." -i [infile] -o [outfile] [-l [logfile]] [-d]\n";
-    print "\nThis will ingest a Json array consisting of multiple objects and produce a tab-separated file where each input object is considered a record, and each name/value pair is considered a field/value.  The entire array will be examined to produce a master record template in which all name/fields are represented.  For any object/record which doesn't contain each name/field found, the output record (line) will include the word 'null' as a placeholder.\n";
-	print "\nNB:  Using 'null' is less than ideal since 'null' is one of the valid values in Json, but we're going to live with it for now.  In a future revision, we will use '<NULL>' to indicate the specific name/field was not present in the source Json array.\n";
+    print "\nThis will ingest a Json array consisting of multiple objects and produce a tab-separated file where each input object is considered a record, and each name/value pair is considered a field/value.  The entire array will be examined to produce a master record template in which all name/fields are represented.  For any object/record which doesn't contain each name/field found, the output record (line) will include \"<NULL>\" (including the quotes) as a placeholder.\n";
     print "\nWe expect to see a Json array similar to this:\n";
     print "\n[{\"sing\":\"song\",\"number\":99.9,\"state\":true,\"count\":[1,2,3],\"pets\":{\"cat\":true,\"dog\":\"rover\",\"rat\":null}},{\"ding\":\"dong\",\"numero\":1,\"state\":false,\"alphabet\":[\"a\",\"b\",\"c\"],\"pets\":{\"cat\":false,\"dog\":\"fido\",\"rat\":null}}]\n";
 	print "\nKey characteristics are: \n\t(1) beginning with [{\"\n\t(2) ending with }]\n\t(3) each object/record being divided by },{\n\t(4) and the general Json syntactical requirements.  Reference https://datatracker.ietf.org/doc/html/rfc8259.\n";

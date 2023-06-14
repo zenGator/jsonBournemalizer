@@ -80,6 +80,17 @@ my %allFields;
 my %outBuff;
 my $starttime= strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime time);
 my @records;		#the main array into which we'll stuff the file
+my $parsePattern='^([^"]*)":("[^"]*"|[0-9.]*|\[[^]]*\]|\{[^}]*\}|(true|false|null))(,"|$)'; 	#recognizes name/value pair
+				#		json syntax calls for key-value pairs with the key being a string (thus quoted), and the values being:
+				#			1 - "string"
+				#			2 - number (pos/neg & can use exponential notation)
+				#			3 - [array]
+				#			4 - {object}
+				#			5 - true, false, null (no quotes)
+#ToDo:  the number RE could be more specific, e.g., [-+]?[0-9]+\.?[0-9]*; 
+#		what's more, Json actually can have exponential notation, so . . . there's that
+#ToDo:  add handling of whitespace around Json structural characters
+
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #main
@@ -96,22 +107,20 @@ while (my $row = <$inFH>) {		#get a line
 #let's make sure the file begins and ends as expected, with [{"<stuff>"]}
 	die "unexpected beginning:\n$records[0]\n" if $records[0]=~ s/^\[{// != 1;			
 	die "unexpected ending:\n$records[$#records]\n" if $records[$#records] =~ s/}\]$// != 1; 
-	
 	printf $logFH "record count: %d\n",$#records+1 if $debugging;
 	printf $logFH "%d lines\n\nfirst:\n%s\n\nsecond:\n%s\n\nlast:\n%s\n",
 		$lineCount,$records[0],$records[1],$records[$#records] if $debugging;
 #ToDo:  add verbose switch and make the first, second, & last lines only show if $debugging>1
-	
 	}			
 
 
 for my $record (@records) {			#take a pass through entire file to identify all the field names
 	$rcdnum++;
 	die "first name should be quoted" if $record =~ s/^"// != 1;	#need to strip the opening quote because the parsing will drop opening quote for each name/field
-	my $row=$record;		#need a working copy of the record/row/line/object
+	my $row=$record;		#need a working copy of the record/row/line/object; only first object needed "permanent" modif'n
 	while ($row) {		#so long as there's data remaining on the row, do this
-		$row =~ s/^([^"]*)":("[^"]*"|[0-9.]*|\[[^]]*\]|\{[^}]*\}|(true|false|null))(,"|$)//;
-#ToDo:  put the pattern into a variable that can be used both here and below
+		$row =~ s/$parsePattern//;
+#DONE:  put the pattern into a variable that can be used both here and below
 		my $newFN=$1;			#$newFN is newly-discovered field name
 		$allFields{$newFN}++;	#increment the value for the key with this field/name
 		}				#end processing the record/row/object
@@ -119,14 +128,14 @@ for my $record (@records) {			#take a pass through entire file to identify all t
 	printf $logFH "%d records processed\n",$rcdnum if $debugging;
 
 #at this point $allFields is a master list (and template) containing all the names/fields in the objects that make up the Json array
+
 #ToDo:  add switch to create an index for each record/object; this would be "idx" or "record #" or something, and would be the first output field	
 	
 	printf $logFH "Found total of %d unique names/fields:\n", (scalar keys %allFields) if $debugging;
 	printf $logFH "%24s: Count\n","Fieldname" if $debugging;
 	foreach my $key (sort keys %allFields){		#cycle through all the discovered field names
 		printf $logFH "%24s: %s\n",$key,$allFields{$key} if $debugging; #shows occurrences of each field across all records
-#DONE:  use <NULL> to distinguish from Json null (quoted)
-		$outBuff{$key}="\"<NULL>\"";			#outbuff serves as template
+		$outBuff{$key}="\"<NULL>\"";			#outbuff serves as template; "<NULL>" distinguishes from Json null 
 #ToDo:  can probably just reuse allFields as template
 		printf $outFH "%s\t",$key;		#generates the header row for the output file
 		}
@@ -139,16 +148,16 @@ for my $row (@records) {	#we should be able to just restart, and this time we ca
     #get a line
 	chomp $row;			#drop trailing newline chars
     $rcdnum++;  		#increment line counter
-#	$row =~ s/^"//;		#this is made "permanent" by acting on $record rather than $row in the first pass
+#	$row =~ s/^"//;		#this was made "permanent" in the first pass by acting on $record rather than $row 
 	while ($row) {		#now processing the row/object/record; loop so long as there's still more to process
-		$row =~ s/^([^"]*)":("[^"]*"|[0-9.]*|\[[^]]*\]|\{[^}]*\}|(true|false|null))(,"|$)//;  #ToDo:  the number RE could be more specific, e.g., [-+]?[0-9]+\.?[0-9]*; what's more, Json actually can have exponential notation, so . . . there's that
+		$row =~ s/$parsePattern//;
 		my $fieldName=$1;			#popping the fieldname from the above substitution
-		my $newVal=$2;			#popping the value from the above
+		my $newVal=$2;				#popping the value from the above
 		$outBuff{$fieldName} = $newVal;	#build a hash table for this line
 		}									#finished processing this line/record/object
-	foreach my $key (sort keys %outBuff){  #need to sort to keep everything aligned
+	foreach my $key (sort keys %outBuff){ 	#need to sort to keep everything aligned
 		printf $outFH "%s\t",$outBuff{$key};	#write output
-		$outBuff{$key}="\"<NULL>\"";					#set each field to null; should be synched with usage in first loop
+		$outBuff{$key}="\"<NULL>\"";			#set each field to null; should be synched with usage in first loop
 		}										#finished writing the output record
 	printf $outFH "\n";							#close of the record with a newline
 	}									#loop back for another line if available
@@ -159,7 +168,6 @@ printf $logFH "ended at %s\n",$endtime if $debugging; 		#only do this if desired
 
 exit 0;			#end of main; everything went well
 
-#ToDo:  add handling of whitespace around Json structural characters
 #ToDo:  add to usage():  if streaming objects, first would have to contain all fields/names that would ever be captured, so that a sed/awk might be more efficient (jsonBournemalizer would, though, handle out of order fields pretty easily, so there's a potential use case)
 #ToDo:  test for existence of <NULL> in the input file and warn or allow custom null value; add suggestion to usage() re using grep -c "<NULL>" [inputJson] to test
 

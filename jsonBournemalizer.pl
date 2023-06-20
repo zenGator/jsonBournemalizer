@@ -6,7 +6,6 @@
 #use and constants here
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#ToDo:  implement/uncomment strict
 use strict;
 use warnings;
 use Getopt::Std; 		#need for commandline flags; 
@@ -18,12 +17,36 @@ use POSIX;				#need for time
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 sub usage;
 
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#declare variables here
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~    
+my $lineCount=0;	#primary counter, the line we are currently processing
+my $rcdnum=0;		#primary counter, the line/record we are currently processing
+my %allFields;
+my %outBuff;
+my $starttime= strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime time);
+my @records;		#the main array into which we'll stuff the file
+my @nullTokens;		#we'll keep track of which records have the null token we use for absent fields
+my $nullToken="\"<NULL>\"";		#this is used as the value for any field that is not in a particular record/object
+my $parsePattern='^([^"]*)":("[^"]*"|[0-9.]*|\[[^]]*\]|\{[^}]*\}|(true|false|null))(,"|$)'; 	#recognizes name/value pair
+				#		json syntax calls for key-value pairs with the key being a string (thus quoted), and the values being:
+				#			1 - "string"
+				#			2 - number (pos/neg & can use exponential notation)
+				#			3 - [array]
+				#			4 - {object}
+				#			5 - true, false, null (no quotes)
+#ToDo:  the number RE could be more specific, e.g., [-+]?[0-9]+\.?[0-9]*; 
+#		what's more, Json actually can have exponential notation, so . . . there's that
+#ToDo:  add handling of whitespace around Json structural characters
+
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #pre-processing
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # switches followed by a : expect an argument
 # see usage() below for explanation of switches
-my $version="05_20230608";
+my $version="05_20230619";
 my $commandname=$0=~ s/^.*\///r;  	#let's know our own name
 my ($infile, $outfile); 			#these are for the filenames, specefied either using switches or as positional params
 my %opt=();							#used with getopts for flagged arguments
@@ -71,26 +94,6 @@ if ($opt{l}) {
     }
 *STDERR=$logFH;
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#declare variables here
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~    
-my $lineCount=0;	#primary counter, the line we are currently processing
-my $rcdnum=0;		#primary counter, the line/record we are currently processing
-my %allFields;
-my %outBuff;
-my $starttime= strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime time);
-my @records;		#the main array into which we'll stuff the file
-my $parsePattern='^([^"]*)":("[^"]*"|[0-9.]*|\[[^]]*\]|\{[^}]*\}|(true|false|null))(,"|$)'; 	#recognizes name/value pair
-				#		json syntax calls for key-value pairs with the key being a string (thus quoted), and the values being:
-				#			1 - "string"
-				#			2 - number (pos/neg & can use exponential notation)
-				#			3 - [array]
-				#			4 - {object}
-				#			5 - true, false, null (no quotes)
-#ToDo:  the number RE could be more specific, e.g., [-+]?[0-9]+\.?[0-9]*; 
-#		what's more, Json actually can have exponential notation, so . . . there's that
-#ToDo:  add handling of whitespace around Json structural characters
-
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #main
@@ -116,6 +119,7 @@ while (my $row = <$inFH>) {		#get a line
 
 for my $record (@records) {			#take a pass through entire file to identify all the field names
 	$rcdnum++;
+	push(@nullTokens, $rcdnum) if $record =~ /$nullToken/; 			#keep track of any record wherein the nullToken is found
 	die "first name should be quoted" if $record =~ s/^"// != 1;	#need to strip the opening quote because the parsing will drop opening quote for each name/field
 	my $row=$record;		#need a working copy of the record/row/line/object; only first object needed "permanent" modif'n
 	while ($row) {		#so long as there's data remaining on the row, do this
@@ -126,6 +130,7 @@ for my $record (@records) {			#take a pass through entire file to identify all t
 		}				#end processing the record/row/object
 	}								#end of the first major while loop
 	printf $logFH "%d records processed\n",$rcdnum if $debugging;
+	printf $logFH "there are %d instances of %s in the input; perhaps you can change those to avoid confusion.\n", $#nullTokens, $nullToken if $#nullTokens>0; 
 
 #at this point $allFields is a master list (and template) containing all the names/fields in the objects that make up the Json array
 
@@ -135,7 +140,7 @@ for my $record (@records) {			#take a pass through entire file to identify all t
 	printf $logFH "%24s: Count\n","Fieldname" if $debugging;
 	foreach my $key (sort keys %allFields){		#cycle through all the discovered field names
 		printf $logFH "%24s: %s\n",$key,$allFields{$key} if $debugging; #shows occurrences of each field across all records
-		$outBuff{$key}="\"<NULL>\"";			#outbuff serves as template; "<NULL>" distinguishes from Json null 
+		$outBuff{$key}=$nullToken;			#outbuff serves as template; "<NULL>" distinguishes from Json null 
 #ToDo:  can probably just reuse allFields as template
 		printf $outFH "%s\t",$key;		#generates the header row for the output file
 		}
@@ -157,7 +162,7 @@ for my $row (@records) {	#we should be able to just restart, and this time we ca
 		}									#finished processing this line/record/object
 	foreach my $key (sort keys %outBuff){ 	#need to sort to keep everything aligned
 		printf $outFH "%s\t",$outBuff{$key};	#write output
-		$outBuff{$key}="\"<NULL>\"";			#set each field to null; should be synched with usage in first loop
+		$outBuff{$key}=$nullToken;			#set each field to null; should be synched with usage in first loop
 		}										#finished writing the output record
 	printf $outFH "\n";							#close of the record with a newline
 	}									#loop back for another line if available
@@ -168,21 +173,23 @@ printf $logFH "ended at %s\n",$endtime if $debugging; 		#only do this if desired
 
 exit 0;			#end of main; everything went well
 
-#ToDo:  add to usage():  if streaming objects, first would have to contain all fields/names that would ever be captured, so that a sed/awk might be more efficient (jsonBournemalizer would, though, handle out of order fields pretty easily, so there's a potential use case)
-#ToDo:  test for existence of <NULL> in the input file and warn or allow custom null value; add suggestion to usage() re using grep -c "<NULL>" [inputJson] to test
-
+#DONE:  add to usage():  if streaming objects, first would have to contain all fields/names that would ever be captured, so that a sed/awk might be more efficient (jsonBournemalizer would, though, handle out of order fields pretty easily, so there's a potential use case)
+#DONE:  test for existence of <NULL> in the input file and warn
+#ToDo:  allow custom null value
+#NoNeed: add suggestion to usage() re using grep -c "<NULL>" [inputJson] to test
+#ToDo:  add switch to show which records have the nullToken
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #subroutines here
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 sub usage() {  #provides help
     print "like this: \n\t".$commandname." -i [infile] -o [outfile] [-l [logfile]] [-d]\n";
-    print "\nThis will ingest a Json array consisting of multiple objects and produce a tab-separated file where each input object is considered a record, and each name/value pair is considered a field/value.  The entire array will be examined to produce a master record template in which all name/fields are represented.  For any object/record which doesn't contain each name/field found, the output record (line) will include \"<NULL>\" (including the quotes) as a placeholder.\n";
+    print "\nThis will ingest a Json array consisting of multiple objects and produce a tab-separated file where each input object is considered a record, and each name/value pair is considered a field/value.  The entire array will be examined to produce a master record template in which all name/fields are represented.  For any object/record which doesn't contain each name/field found, the output record (line) will include ".$nullToken." (including the quotes) as a placeholder.\n";
     print "\nWe expect to see a Json array similar to this:\n";
     print "\n[{\"sing\":\"song\",\"number\":99.9,\"state\":true,\"count\":[1,2,3],\"pets\":{\"cat\":true,\"dog\":\"rover\",\"rat\":null}},{\"ding\":\"dong\",\"numero\":1,\"state\":false,\"alphabet\":[\"a\",\"b\",\"c\"],\"pets\":{\"cat\":false,\"dog\":\"fido\",\"rat\":null}}]\n";
 	print "\nKey characteristics are: \n\t(1) beginning with [{\"\n\t(2) ending with }]\n\t(3) each object/record being divided by },{\n\t(4) and the general Json syntactical requirements.  Reference https://datatracker.ietf.org/doc/html/rfc8259.\n";
     print "\nThis does NOT accommodate white space surrounding the structural characters ({,},[,],:, & ,).  A future version should allow for such.\n";	
     print "\nThe Json objects will only be parsed at their top level.  That is, any values/fields that are arrays or objects will be preserved in the output in their original form.  Perhaps at some point an effort will be made to create subfields (e.g., \"pets:cat\", \"pets:dog\", and \"pets:rat\" from the above exemplar), but don't hold your breath.\n";
-    print "\nThis is intended to normalize fairly-similar objects within a Json array, but allowing for differing sets of names/fields in each object (and in differing order:  no need for names to be alphabetical).\n";
+    print "\nThis is intended to normalize fairly-similar objects within a Json array, but allowing for differing sets of names/fields in each object (and in differing order:  no need for names to be alphabetical).  If one were to stream the json objects, the first would need to contain all fields/names that would ever be captured.  And in that case, an awk or sed might be more efficient.  That said, jsonBournemalizer would handle out of order fields pretty easily, so there's a potential use case there.\n";
     exit 1;
     }

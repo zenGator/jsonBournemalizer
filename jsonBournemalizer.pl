@@ -25,7 +25,7 @@ sub usage;
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #declare variables here
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~    
-my $version="0.5_20230619";
+my $version="0.6_20230705";
 my $lineCount=0;	#primary counter, the line we are currently processing
 my $rcdnum=0;		#primary counter, the line/record we are currently processing
 my %allFields;

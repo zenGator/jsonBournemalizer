@@ -10,6 +10,10 @@ use strict;
 use warnings;
 use Getopt::Std; 		#need for commandline flags; 
 						#ToDo: consider Getopt::Long for extended argument-handling
+						#ToDo: consider using built-in version/help methods: 
+						#	see https://stackoverflow.com/questions/21956620/how-can-one-respond-to-the-help-flag-with-getoptstd
+						#	& https://perldoc.perl.org/Getopt::Std
+						#ToDo:  add means to print version (or automatically print at end of usage()
 use POSIX;				#need for time
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -21,10 +25,10 @@ sub usage;
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #declare variables here
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~    
+my $version="0.5_20230619";
 my $lineCount=0;	#primary counter, the line we are currently processing
 my $rcdnum=0;		#primary counter, the line/record we are currently processing
 my %allFields;
-my %outBuff;
 my $starttime= strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime time);
 my @records;		#the main array into which we'll stuff the file
 my @nullTokens;		#we'll keep track of which records have the null token we use for absent fields
@@ -46,7 +50,6 @@ my $parsePattern='^([^"]*)":("[^"]*"|[0-9.]*|\[[^]]*\]|\{[^}]*\}|(true|false|nul
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # switches followed by a : expect an argument
 # see usage() below for explanation of switches
-my $version="05_20230619";
 my $commandname=$0=~ s/^.*\///r;  	#let's know our own name
 my ($infile, $outfile); 			#these are for the filenames, specefied either using switches or as positional params
 my %opt=();							#used with getopts for flagged arguments
@@ -108,8 +111,13 @@ while (my $row = <$inFH>) {		#get a line
 	@records=split(/},{/,$row);			#break the array into single-object elements
 	
 #let's make sure the file begins and ends as expected, with [{"<stuff>"]}
-	die "unexpected beginning:\n$records[0]\n" if $records[0]=~ s/^\[{// != 1;			
-	die "unexpected ending:\n$records[$#records]\n" if $records[$#records] =~ s/}\]$// != 1; 
+#	die "unexpected beginning:\n$records[0]\n" if $records[0]=~ s/^\[{// != 1;			
+#bloomberg hack
+die "unexpected beginning:\n$records[0]\n" if $records[0]=~ s/^\[?{// != 1;			
+#	die "unexpected ending:\n$records[$#records]\n" if $records[$#records] =~ s/}\]$// != 1; 
+#bloomberg hack
+die "unexpected ending:\n$records[$#records]\n" if $records[$#records] =~ s/}\]?$// != 1; 
+#ToDo:  add flexibility by looking for closure-comma-quote to identify values after identifying name/field
 	printf $logFH "record count: %d\n",$#records+1 if $debugging;
 	printf $logFH "%d lines\n\nfirst:\n%s\n\nsecond:\n%s\n\nlast:\n%s\n",
 		$lineCount,$records[0],$records[1],$records[$#records] if $debugging;
@@ -124,7 +132,6 @@ for my $record (@records) {			#take a pass through entire file to identify all t
 	my $row=$record;		#need a working copy of the record/row/line/object; only first object needed "permanent" modif'n
 	while ($row) {		#so long as there's data remaining on the row, do this
 		$row =~ s/$parsePattern//;
-#DONE:  put the pattern into a variable that can be used both here and below
 		my $newFN=$1;			#$newFN is newly-discovered field name
 		$allFields{$newFN}++;	#increment the value for the key with this field/name
 		}				#end processing the record/row/object
@@ -140,8 +147,8 @@ for my $record (@records) {			#take a pass through entire file to identify all t
 	printf $logFH "%24s: Count\n","Fieldname" if $debugging;
 	foreach my $key (sort keys %allFields){		#cycle through all the discovered field names
 		printf $logFH "%24s: %s\n",$key,$allFields{$key} if $debugging; #shows occurrences of each field across all records
-		$outBuff{$key}=$nullToken;			#outbuff serves as template; "<NULL>" distinguishes from Json null 
-#ToDo:  can probably just reuse allFields as template
+		$allFields{$key}=$nullToken;			#"<NULL>" distinguishes from Json null 
+#DONE:  can probably just reuse allFields as template
 		printf $outFH "%s\t",$key;		#generates the header row for the output file
 		}
 	printf $outFH "\n";		#close off the header
@@ -158,11 +165,11 @@ for my $row (@records) {	#we should be able to just restart, and this time we ca
 		$row =~ s/$parsePattern//;
 		my $fieldName=$1;			#popping the fieldname from the above substitution
 		my $newVal=$2;				#popping the value from the above
-		$outBuff{$fieldName} = $newVal;	#build a hash table for this line
+		$allFields{$fieldName} = $newVal;	#build a hash table for this line
 		}									#finished processing this line/record/object
-	foreach my $key (sort keys %outBuff){ 	#need to sort to keep everything aligned
-		printf $outFH "%s\t",$outBuff{$key};	#write output
-		$outBuff{$key}=$nullToken;			#set each field to null; should be synched with usage in first loop
+	foreach my $key (sort keys %allFields){ 	#need to sort to keep everything aligned
+		printf $outFH "%s\t",$allFields{$key};	#write output
+		$allFields{$key}=$nullToken;			#set each field to null; should be synched with usage in first loop
 		}										#finished writing the output record
 	printf $outFH "\n";							#close of the record with a newline
 	}									#loop back for another line if available
@@ -173,8 +180,6 @@ printf $logFH "ended at %s\n",$endtime if $debugging; 		#only do this if desired
 
 exit 0;			#end of main; everything went well
 
-#DONE:  add to usage():  if streaming objects, first would have to contain all fields/names that would ever be captured, so that a sed/awk might be more efficient (jsonBournemalizer would, though, handle out of order fields pretty easily, so there's a potential use case)
-#DONE:  test for existence of <NULL> in the input file and warn
 #ToDo:  allow custom null value
 #NoNeed: add suggestion to usage() re using grep -c "<NULL>" [inputJson] to test
 #ToDo:  add switch to show which records have the nullToken

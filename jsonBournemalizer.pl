@@ -25,11 +25,11 @@ sub usage;
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #declare variables here
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~    
-my $version="0.6_20230705";
+my $version="0.7_20230709";
 my $lineCount=0;	#primary counter, the line we are currently processing
 my $rcdnum=0;		#primary counter, the line/record we are currently processing
 my %allFields;
-my $starttime= strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime time);
+my $starttime= time;
 my @records;		#the main array into which we'll stuff the file
 my @nullTokens;		#we'll keep track of which records have the null token we use for absent fields
 my $nullToken="\"<NULL>\"";		#this is used as the value for any field that is not in a particular record/object
@@ -101,7 +101,7 @@ if ($opt{l}) {
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #main
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-printf $logFH "started at %s\n",$starttime if $debugging;	#only do this if desired/requested
+printf $logFH "started at %s\n",strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime $starttime) if $debugging;	#only do this if desired/requested
 
 #prepare file for parsing by removing outermost brackets and breaking objects into lines
 while (my $row = <$inFH>) {		#get a line
@@ -148,7 +148,6 @@ for my $record (@records) {			#take a pass through entire file to identify all t
 	foreach my $key (sort keys %allFields){		#cycle through all the discovered field names
 		printf $logFH "%24s: %s\n",$key,$allFields{$key} if $debugging; #shows occurrences of each field across all records
 		$allFields{$key}=$nullToken;			#"<NULL>" distinguishes from Json null 
-#DONE:  can probably just reuse allFields as template
 		printf $outFH "%s\t",$key;		#generates the header row for the output file
 		}
 	printf $outFH "\n";		#close off the header
@@ -174,9 +173,10 @@ for my $row (@records) {	#we should be able to just restart, and this time we ca
 	printf $outFH "\n";							#close of the record with a newline
 	}									#loop back for another line if available
 
-my $endtime= strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime time);
-printf $logFH "ended at %s\n",$endtime if $debugging; 		#only do this if desired/requested
-#ToDo:  calculate elapsed time and add to logfile
+my $endtime= time;
+printf $logFH "ended at %s\n",strftime ("%Y.%m.%dT%H:%M:%SZ", gmtime $endtime) if $debugging; 		#only do this if desired/requested
+printf $logFH "elapsed time: %d second(s)\n", ($endtime - $starttime) if $debugging;
+#DONE:  calculate elapsed time and add to logfile
 
 exit 0;			#end of main; everything went well
 
